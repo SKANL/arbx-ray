@@ -4,6 +4,16 @@
 
 El objetivo del proyecto es demostrar ejecución realista, no solo mostrar `best_bid - best_ask`.
 
+## How to judge this project in 90 seconds
+
+1. Abre la app desplegada y pulsa **Live feeds** para conectar WebSockets públicos y snapshots REST.
+2. Revisa **Command route / Best Route** para ver la oportunidad actual o la razón exacta por la que no se ejecuta.
+3. Abre **Backend Evidence** para verificar `/api/health`, `/api/backend-manifest` y la capa backend serverless.
+4. Si el mercado live está quieto o un exchange público falla, pulsa **Replay**: carga una decisión determinística con fills, fees, wallets y P&L.
+5. Abre **Judge Proof Board** para ver la matriz de criterios, evidencia y ruta de demo para jurado.
+
+Si un exchange público falla, el sistema no lo oculta: lo reporta por venue, conserva la evidencia disponible y permite replay determinístico. La demo no depende de prometer una oportunidad rentable live justo en el momento de evaluación.
+
 ## Contrato full-stack
 
 ArbX-Ray no es una pantalla estática. Es una aplicación Next.js full-stack:

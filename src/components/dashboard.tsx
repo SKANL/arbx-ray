@@ -1178,7 +1178,7 @@ function MissionControl({
     at?: number;
   }>({
     label: "Idle",
-    detail: "Choose Live feeds for public WebSockets or Replay for deterministic evidence.",
+    detail: "Choose Live feeds for public WebSockets or Replay as a deterministic fallback for unstable public feeds.",
   });
   const [actionPhase, setActionPhase] = useState<"idle" | "starting" | "live" | "replay" | "stopped" | "cleared">("idle");
   useEffect(() => {
@@ -1311,7 +1311,7 @@ function MissionControl({
                     <Play size={16} /> Live feeds
                   </Button>
                 </Tooltip>
-                <Tooltip label="Stops live networking and loads a deterministic scenario so judges can inspect one full execution decision even if a venue is unavailable.">
+                <Tooltip label="Deterministic fallback for unstable public feeds: stops live networking and loads one complete execution decision for judges.">
                   <Button variant="outline" onClick={runReplay} disabled={mode === "replay"}>
                     <History size={16} /> Replay
                   </Button>
@@ -1410,7 +1410,7 @@ function MissionControl({
                 <LineChart size={15} /> Historical Replay
               </ViewButton>
               <ViewButton active={activeView === "judge"} onClick={() => setActiveView("judge")}>
-                <Trophy size={15} /> Judge Mode
+                <Trophy size={15} /> Judge Proof Board
               </ViewButton>
               <ViewButton active={activeView === "replay"} onClick={() => setActiveView("replay")}>
                 <History size={15} /> Replay & Risk
@@ -1424,7 +1424,7 @@ function MissionControl({
             <div className="flex items-start justify-between gap-3">
               <div>
                 <CardTitle className="flex items-center gap-2">
-                  <Rocket size={16} className="text-emerald-300" /> 70s Judge Path
+                  <Rocket size={16} className="text-emerald-300" /> Start Here: 70s Judge Path
                 </CardTitle>
                 <CardDescription>Highest-impact route generated from current evidence.</CardDescription>
               </div>
@@ -1502,7 +1502,7 @@ function CommandPalette({
         { view: "mexico" as DashboardView, label: "Mexico Corridor", description: "Bitso BTC/MXN and USD/MXN route simulator" },
         { view: "triangular" as DashboardView, label: "Triangular Lab", description: "Coinbase BTC/ETH/USD cycle simulator" },
         { view: "backtest" as DashboardView, label: "Historical Replay", description: "Real candle replay and robustness labs" },
-        { view: "judge" as DashboardView, label: "Judge Mode", description: "Scorecard, evidence navigator, audit receipt" },
+        { view: "judge" as DashboardView, label: "Judge Proof Board", description: "Scorecard, evidence navigator, audit receipt" },
         { view: "replay" as DashboardView, label: "Replay & Risk", description: "Wallets, P&L, rejections, settlement risk" },
       ],
     [],
@@ -1651,7 +1651,7 @@ const viewMeta: Record<
     judgeValue: "Proves the strategy has historical evidence, out-of-sample discipline, and finite-sample downside checks.",
   },
   judge: {
-    title: "Judge Mode",
+    title: "Judge Proof Board",
     stage: "Present",
     description: "Scorecard, evidence navigator, demo director, audit receipt, and all high-impact proof modules in one flow.",
     judgeValue: "Lets the jury verify every requirement quickly without hunting through the full application.",
