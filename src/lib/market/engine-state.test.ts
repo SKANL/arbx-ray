@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import { buildEnginePublication } from "./engine-state";
 import type { OpportunityDecision } from "./types";
 
-function decision(id: string, observedAt: number): OpportunityDecision {
+function decision(id: string, observedAt: number, status: OpportunityDecision["status"] = "accepted"): OpportunityDecision {
   return {
     id,
-    status: "accepted",
+    status,
     buyExchange: "kraken",
     sellExchange: "coinbase",
     quoteAsset: "USD",
@@ -20,7 +20,7 @@ function decision(id: string, observedAt: number): OpportunityDecision {
       buy: { midPrice: 100_000, spreadUsd: 1, spreadBps: 0.1, imbalance: 0, microprice: 100_000, pressure: "neutral" },
       sell: { midPrice: 100_050, spreadUsd: 1, spreadBps: 0.1, imbalance: 0, microprice: 100_050, pressure: "neutral" },
     },
-    rejectionReasons: [],
+    rejectionReasons: status === "accepted" ? [] : ["Negative net expectancy"],
     risk: {
       score: 90,
       latencyPenaltyUsd: 0,
@@ -61,5 +61,20 @@ describe("buildEnginePublication", () => {
     expect(publication.latestDecision?.id).toBe("old");
     expect(publication.routeFreshnessMs).toBe(500);
     expect(publication.routeState).toBe("current-route");
+  });
+
+  it("does not label a rejected current decision as executable", () => {
+    const rejected = decision("rejected", 9_500, "rejected");
+    const publication = buildEnginePublication({
+      currentBest: rejected,
+      recent: [rejected],
+      now: 10_000,
+    });
+
+    expect(publication.best).toBeUndefined();
+    expect(publication.currentBest).toBeUndefined();
+    expect(publication.latestDecision).toBe(rejected);
+    expect(publication.routeState).toBe("no-current-route");
+    expect(publication.routeMessage).toContain("Negative net expectancy");
   });
 });

@@ -164,16 +164,19 @@ function buildSideSlices(input: {
     const reliability = input.reliabilityByVenue.get(book.exchangeId);
     const reliabilityHaircutBps = reliability?.totalHaircutBps ?? 0;
     const feeBps = defaultEngineConfig.feesBps[book.exchangeId] ?? 25;
+    const costBps = feeBps + reliabilityHaircutBps;
     const levels = input.side === "buy" ? book.asks : book.bids;
     return levels.map((level, levelIndex) => ({
       book,
       level,
       levelIndex,
       reliabilityHaircutBps,
+      feeBps,
+      costBps,
       effectivePriceUsd:
         input.side === "buy"
-          ? level.price * (1 + (feeBps + reliabilityHaircutBps) / 10_000)
-          : level.price * (1 - (feeBps + reliabilityHaircutBps) / 10_000),
+          ? level.price * (1 + costBps / 10_000)
+          : level.price * (1 - costBps / 10_000),
     }));
   });
   candidates.sort((a, b) =>
@@ -187,11 +190,15 @@ function buildSideSlices(input: {
   for (const candidate of candidates) {
     if (remainingTarget <= 0) break;
     const walletRemaining = remainingByVenue.get(candidate.book.exchangeId) ?? 0;
-    const walletCapacityBtc = input.side === "buy" ? walletRemaining / candidate.level.price : walletRemaining;
+    const walletCapacityBtc =
+      input.side === "buy"
+        ? walletRemaining / (candidate.level.price * (1 + candidate.costBps / 10_000))
+        : walletRemaining;
     const sizeBtc = Math.min(candidate.level.size, remainingTarget, walletCapacityBtc);
     if (sizeBtc <= 0) continue;
     const notionalUsd = sizeBtc * candidate.level.price;
-    const feeUsd = notionalUsd * ((defaultEngineConfig.feesBps[candidate.book.exchangeId] ?? 25) / 10_000);
+    const feeUsd = notionalUsd * (candidate.feeBps / 10_000);
+    const buyDebitUsd = notionalUsd * (1 + candidate.costBps / 10_000);
     slices.push({
       side: input.side,
       exchangeId: candidate.book.exchangeId,
@@ -206,7 +213,7 @@ function buildSideSlices(input: {
       reliabilityHaircutBps: candidate.reliabilityHaircutBps,
     });
     remainingTarget -= sizeBtc;
-    remainingByVenue.set(candidate.book.exchangeId, input.side === "buy" ? walletRemaining - notionalUsd : walletRemaining - sizeBtc);
+    remainingByVenue.set(candidate.book.exchangeId, input.side === "buy" ? walletRemaining - buyDebitUsd : walletRemaining - sizeBtc);
   }
   return slices;
 }

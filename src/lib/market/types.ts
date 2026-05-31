@@ -104,7 +104,10 @@ export type RiskBreakdown = {
   score: number;
   latencyPenaltyUsd: number;
   feeCostUsd: number;
+  buyFeeUsd?: number;
+  sellFeeUsd?: number;
   withdrawalCostUsd: number;
+  basisHaircutUsd?: number;
   grossProfitUsd: number;
   positivePnlProbability: number;
   reasons: string[];

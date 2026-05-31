@@ -251,6 +251,10 @@ gh repo create arbx-ray --public --source=. --remote=origin --push
 
 Si el nombre `arbx-ray` ya existe en tu cuenta, el comando fallará. En ese caso conviene elegir un nombre explícito como `arbx-ray-challenge` antes de volver a intentar.
 
+## Autoría individual
+
+`SKANL` y `LoffyDev` pertenecen a la misma persona. `SKANL` es mi cuenta personal de GitHub y `LoffyDev` es mi identidad/cuenta escolar configurada en Git. El proyecto fue desarrollado de forma individual, sin equipo ni contribuciones externas.
+
 ## Deploy
 
 Deploy recomendado:

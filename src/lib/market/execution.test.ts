@@ -97,6 +97,37 @@ describe("evaluateOpportunity", () => {
     expect(decision.rejectionReasons).toContain("Cross-lane comparison requires basis haircut");
     expect(decision.rejectionReasons).toContain("Stale buy book");
   });
+
+  it("accepts profitable partial fills with the executable size", () => {
+    const buyBook = book("kraken", "USD", [[70_000, 1]], [[70_000, 0.25]]);
+    const sellBook = book("coinbase", "USD", [[71_200, 0.25]], [[71_250, 1]]);
+    const wallets: WalletState = {
+      kraken: { BTC: 0, USD: 100_000, USDT: 0 },
+      coinbase: { BTC: 1, USD: 10_000, USDT: 0 },
+    };
+
+    const decision = evaluateOpportunity(buyBook, sellBook, wallets, config, now);
+
+    expect(decision.status).toBe("accepted");
+    expect(decision.tradeSizeBtc).toBeCloseTo(0.25);
+    expect(decision.risk.reasons).toContain("Partial fill due to shallow book");
+    expect(decision.rejectionReasons).not.toContain("Partial fill due to shallow book");
+  });
+
+  it("sizes buy capacity after buy fees and withdrawal reserve", () => {
+    const buyBook = book("kraken", "USD", [[70_000, 1]], [[70_000, 1]]);
+    const sellBook = book("coinbase", "USD", [[71_400, 1]], [[71_450, 1]]);
+    const wallets: WalletState = {
+      kraken: { BTC: 0, USD: 70_000, USDT: 0 },
+      coinbase: { BTC: 1, USD: 10_000, USDT: 0 },
+    };
+
+    const decision = evaluateOpportunity(buyBook, sellBook, wallets, config, now);
+    const totalBuyDebit = decision.buyFill.notional + (decision.risk.buyFeeUsd ?? 0) + decision.risk.withdrawalCostUsd;
+
+    expect(decision.tradeSizeBtc).toBeLessThan(1);
+    expect(totalBuyDebit).toBeLessThanOrEqual(wallets.kraken.USD + 0.01);
+  });
 });
 
 describe("executeAcceptedTrade", () => {
@@ -112,8 +143,14 @@ describe("executeAcceptedTrade", () => {
     const result = executeAcceptedTrade(decision, wallets);
 
     expect(result.wallets.kraken.BTC).toBeGreaterThan(0);
-    expect(result.wallets.kraken.USD).toBeLessThan(100_000);
+    expect(result.wallets.kraken.USD).toBeCloseTo(
+      100_000 - decision.buyFill.notional - (decision.risk.buyFeeUsd ?? 0) - decision.risk.withdrawalCostUsd,
+      2,
+    );
     expect(result.wallets.coinbase.BTC).toBeLessThan(1);
-    expect(result.wallets.coinbase.USD).toBeGreaterThan(10_000);
+    expect(result.wallets.coinbase.USD).toBeCloseTo(
+      10_000 + decision.sellFill.notional - (decision.risk.sellFeeUsd ?? 0),
+      2,
+    );
   });
 });

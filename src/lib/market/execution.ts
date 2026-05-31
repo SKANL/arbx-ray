@@ -80,17 +80,27 @@ export function evaluateOpportunity(
   const sellWallet = wallets[sellBook.exchangeId] ?? emptyWallet;
   const bestAsk = buyBook.asks[0]?.price ?? 0;
   const bestBid = sellBook.bids[0]?.price ?? 0;
+  const buyFeeRate = feeRate(buyBook.exchangeId, config);
+  const sellFeeRate = feeRate(sellBook.exchangeId, config);
 
   if (bestAsk <= 0 || bestBid <= 0 || bestAsk >= bestBid) {
     rejectionReasons.push("No positive gross spread");
   }
 
   const quoteAvailable = buyWallet[buyBook.quoteAsset] ?? 0;
-  const maxByQuote = bestAsk > 0 ? quoteAvailable / bestAsk : 0;
   const maxByInventory = sellWallet.BTC;
-  const desiredSize = Math.min(config.maxTradeBtc, maxByQuote, maxByInventory);
+  const desiredBeforeQuote = Math.min(config.maxTradeBtc, maxByInventory);
+  const desiredSize = capBuySizeToWallet(
+    buyBook.asks,
+    desiredBeforeQuote,
+    quoteAvailable,
+    buyFeeRate,
+    config.withdrawalFeeBtc,
+    bestAsk || bestBid,
+  );
 
-  if (maxByQuote <= 0) rejectionReasons.push(`Insufficient ${buyBook.quoteAsset} on buy venue`);
+  if (desiredBeforeQuote > 0 && desiredSize <= 0) rejectionReasons.push(`Insufficient ${buyBook.quoteAsset} on buy venue`);
+  if (desiredSize > 0 && desiredSize < desiredBeforeQuote) reasons.push("Wallet capacity capped route size");
   if (maxByInventory <= 0) rejectionReasons.push("Insufficient BTC on sell venue");
 
   const buyFill = simulateMarketFill(buyBook.asks, desiredSize);
@@ -98,15 +108,17 @@ export function evaluateOpportunity(
   const tradeSizeBtc = Math.min(buyFill.filledBtc, sellFill.filledBtc);
 
   if (tradeSizeBtc <= 0) rejectionReasons.push("Insufficient liquidity");
-  if (!buyFill.complete || !sellFill.complete) rejectionReasons.push("Partial fill due to shallow book");
+  if (tradeSizeBtc > 0 && (!buyFill.complete || !sellFill.complete)) {
+    reasons.push("Partial fill due to shallow book");
+  }
 
   const adjustedBuyFill =
     tradeSizeBtc === buyFill.filledBtc ? buyFill : simulateMarketFill(buyBook.asks, tradeSizeBtc);
   const adjustedSellFill =
     tradeSizeBtc === sellFill.filledBtc ? sellFill : simulateMarketFill(sellBook.bids, tradeSizeBtc);
 
-  const buyFeeUsd = adjustedBuyFill.notional * feeRate(buyBook.exchangeId, config);
-  const sellFeeUsd = adjustedSellFill.notional * feeRate(sellBook.exchangeId, config);
+  const buyFeeUsd = adjustedBuyFill.notional * buyFeeRate;
+  const sellFeeUsd = adjustedSellFill.notional * sellFeeRate;
   const feeCostUsd = buyFeeUsd + sellFeeUsd;
   const grossProfitUsd = adjustedSellFill.notional - adjustedBuyFill.notional;
   const referencePrice = adjustedBuyFill.vwap || bestAsk || bestBid;
@@ -168,7 +180,10 @@ export function evaluateOpportunity(
       score: riskScore,
       latencyPenaltyUsd,
       feeCostUsd,
+      buyFeeUsd,
+      sellFeeUsd,
       withdrawalCostUsd,
+      basisHaircutUsd,
       grossProfitUsd,
       positivePnlProbability,
       reasons,
@@ -249,11 +264,13 @@ export function executeAcceptedTrade(
   const quote = decision.quoteAsset;
   const buyCost = decision.buyFill.notional;
   const sellProceeds = decision.sellFill.notional;
+  const buyFeeUsd = decision.risk.buyFeeUsd ?? 0;
+  const sellFeeUsd = decision.risk.sellFeeUsd ?? Math.max(0, decision.risk.feeCostUsd - buyFeeUsd);
 
-  buyWallet[quote] -= buyCost;
+  buyWallet[quote] -= buyCost + buyFeeUsd + decision.risk.withdrawalCostUsd;
   buyWallet.BTC += decision.tradeSizeBtc;
   sellWallet.BTC -= decision.tradeSizeBtc;
-  sellWallet[quote] += sellProceeds;
+  sellWallet[quote] += sellProceeds - sellFeeUsd;
 
   return {
     id: `trade-${decision.id}`,
@@ -277,7 +294,11 @@ export function findBestOpportunity(
       decisions.push(evaluateOpportunity(buyBook, sellBook, wallets, config, observedAt));
     }
   }
-  return decisions.sort((a, b) => b.netProfitUsd - a.netProfitUsd)[0];
+  return decisions.sort(
+    (a, b) =>
+      Number(b.status === "accepted") - Number(a.status === "accepted") ||
+      b.netProfitUsd - a.netProfitUsd,
+  )[0];
 }
 
 function feeRate(exchangeId: string, config: EngineConfig): number {
@@ -293,6 +314,36 @@ function cloneWallets(wallets: WalletState): WalletState {
 function ensureWallet(wallets: WalletState, exchangeId: string): WalletBalance {
   wallets[exchangeId] ??= { ...emptyWallet };
   return wallets[exchangeId];
+}
+
+function capBuySizeToWallet(
+  asks: OrderBookLevel[],
+  desiredSizeBtc: number,
+  quoteAvailable: number,
+  buyFeeRate: number,
+  withdrawalFeeBtc: number,
+  fallbackPrice: number,
+): number {
+  if (desiredSizeBtc <= 0 || quoteAvailable <= 0 || fallbackPrice <= 0) return 0;
+  const debitFor = (sizeBtc: number): number => {
+    const fill = simulateMarketFill(asks, sizeBtc);
+    const referencePrice = fill.vwap || fallbackPrice;
+    return fill.notional * (1 + buyFeeRate) + withdrawalFeeBtc * referencePrice;
+  };
+  if (debitFor(0) > quoteAvailable) return 0;
+  if (debitFor(desiredSizeBtc) <= quoteAvailable) return desiredSizeBtc;
+
+  let low = 0;
+  let high = desiredSizeBtc;
+  for (let index = 0; index < 32; index += 1) {
+    const mid = (low + high) / 2;
+    if (debitFor(mid) <= quoteAvailable) {
+      low = mid;
+    } else {
+      high = mid;
+    }
+  }
+  return low;
 }
 
 function round(value: number): string {

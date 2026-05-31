@@ -18,9 +18,9 @@ export function buildEnginePublication(input: {
   now?: number;
 }): EnginePublication {
   const now = input.now ?? Date.now();
-  const latestDecision = input.recent[0];
+  const latestDecision = input.recent[0] ?? input.currentBest;
   const currentBest = input.currentBest;
-  if (currentBest) {
+  if (currentBest?.status === "accepted") {
     return {
       best: currentBest,
       currentBest,
@@ -29,6 +29,18 @@ export function buildEnginePublication(input: {
       routeFreshnessMs: Math.max(0, now - currentBest.observedAt),
       routeState: "current-route",
       routeMessage: "Current executable route from the latest live books.",
+    };
+  }
+  if (currentBest?.status === "rejected") {
+    const reason = currentBest.rejectionReasons[0] ?? "route rejected by execution gates";
+    return {
+      best: undefined,
+      currentBest: undefined,
+      latestDecision,
+      lastTickAt: now,
+      routeFreshnessMs: Math.max(0, now - currentBest.observedAt),
+      routeState: "no-current-route",
+      routeMessage: `No executable route in the latest books: ${reason}.`,
     };
   }
   return {

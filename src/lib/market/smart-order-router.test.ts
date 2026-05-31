@@ -49,6 +49,28 @@ describe("buildSmartOrderRouter", () => {
     expect(plan.rejectionReasons).toContain("venue reliability halt excluded");
     expect(plan.rejectionReasons).toContain("prefunded wallet capacity capped route size");
   });
+
+  it("caps buy slices by quote wallet after fees and reliability haircuts", () => {
+    const plan = buildSmartOrderRouter({
+      radar: radar([
+        book("coinbase", "USD", [[100_000, 1]], [[101_000, 1]]),
+        book("kraken", "USD", [[100_500, 1]], [[102_000, 1]]),
+      ]),
+      wallets: {
+        coinbase: { BTC: 0, USD: 100_000, USDT: 0 },
+        kraken: { BTC: 1, USD: 0, USDT: 0 },
+      },
+      targetSizeBtc: 1,
+      observedAt: 1_700_000_000_000,
+    });
+
+    const coinbaseSpend = plan.buySlices
+      .filter((slice) => slice.exchangeId === "coinbase")
+      .reduce((sum, slice) => sum + slice.notionalUsd + slice.feeUsd, 0);
+
+    expect(coinbaseSpend).toBeLessThanOrEqual(100_000);
+    expect(plan.summary.tradeSizeBtc).toBeLessThan(1);
+  });
 });
 
 const wallets: WalletState = {

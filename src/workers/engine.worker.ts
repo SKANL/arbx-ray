@@ -4,6 +4,7 @@ import { exchangeAdapters, normalizeExchangeMessage } from "@/lib/market/adapter
 import { applyBookDelta, createEmptyBookStore, listBooks } from "@/lib/market/book-state";
 import { buildEnginePublication, type EngineRouteState } from "@/lib/market/engine-state";
 import { evaluateOpportunity, executeAcceptedTrade, findBestOpportunity } from "@/lib/market/execution";
+import { refreshReplayBookForEvaluation } from "@/lib/market/replay";
 import {
   createInitialFeedHealth,
   nextReconnectDelayMs,
@@ -64,6 +65,7 @@ let publishTimer: number | undefined;
 let lastEvaluateAt = 0;
 let active = false;
 let activeExchanges: ExchangeId[] = [];
+let replayMode = false;
 
 ctx.onmessage = (event: MessageEvent<WorkerCommand>) => {
   const command = event.data;
@@ -78,12 +80,14 @@ ctx.onmessage = (event: MessageEvent<WorkerCommand>) => {
     return;
   }
   if (command.type === "useReplay") {
+    replayMode = true;
     seedReplay();
     return;
   }
   if (command.type === "start") {
     stopAll();
     active = true;
+    replayMode = false;
     activeExchanges = command.enabledExchanges;
     config = command.config;
     wallets = structuredClone(command.wallets);
@@ -234,10 +238,14 @@ function evaluate(): void {
 }
 
 function publish(): void {
-  const books = listBooks(store);
+  const now = Date.now();
+  const books = replayMode
+    ? listBooks(store).map((book) => refreshReplayBookForEvaluation(book, now))
+    : listBooks(store);
   const publication = buildEnginePublication({
-    currentBest: config ? findBestOpportunity(books, wallets, config) : undefined,
+    currentBest: config ? findBestOpportunity(books, wallets, config, now) : undefined,
     recent,
+    now,
   });
   const message: EngineWorkerMessage = {
     type: "state",
@@ -260,6 +268,7 @@ function publish(): void {
 function stopAll(): void {
   active = false;
   activeExchanges = [];
+  replayMode = false;
   for (const timer of reconnectTimers.values()) ctx.clearTimeout(timer);
   reconnectTimers.clear();
   for (const timer of pingTimers.values()) ctx.clearInterval(timer);
@@ -278,6 +287,7 @@ function clearState(): void {
   wallets = {};
   cumulativePnlUsd = 0;
   lastEvaluateAt = 0;
+  replayMode = false;
 }
 
 function ensureHealth(exchangeId: ExchangeId): FeedTelemetry {
