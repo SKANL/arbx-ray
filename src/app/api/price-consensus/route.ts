@@ -7,6 +7,7 @@ import {
   parseCoinbaseTicker,
   parseKrakenTicker,
 } from "@/lib/market/price-consensus";
+import { fetchPublicJson } from "@/lib/server/public-fetch";
 
 const sources = {
   coinbase: "https://api.exchange.coinbase.com/products/BTC-USD/ticker",
@@ -21,12 +22,12 @@ export async function GET() {
   const errors: string[] = [];
   const receivedAt = Date.now();
   const [coinbase, kraken, binance, bitstamp, bitsoBtcMxn, bitsoUsdMxn] = await Promise.all([
-    fetchJson(sources.coinbase, errors),
-    fetchJson(sources.kraken, errors),
-    fetchJson(sources.binance, errors),
-    fetchJson(sources.bitstamp, errors),
-    fetchJson(sources.bitsoBtcMxn, errors),
-    fetchJson(sources.bitsoUsdMxn, errors),
+    fetchPublicJson(sources.coinbase, errors, { userAgent: "ArbX-Ray price consensus" }),
+    fetchPublicJson(sources.kraken, errors, { userAgent: "ArbX-Ray price consensus" }),
+    fetchPublicJson(sources.binance, errors, { userAgent: "ArbX-Ray price consensus" }),
+    fetchPublicJson(sources.bitstamp, errors, { userAgent: "ArbX-Ray price consensus" }),
+    fetchPublicJson(sources.bitsoBtcMxn, errors, { userAgent: "ArbX-Ray price consensus" }),
+    fetchPublicJson(sources.bitsoUsdMxn, errors, { userAgent: "ArbX-Ray price consensus" }),
   ]);
   const usdMxnRate = parseBitsoUsdMxnRate(bitsoUsdMxn);
   if (!usdMxnRate) errors.push("Bitso USD/MXN ticker unavailable for MXN conversion");
@@ -56,23 +57,6 @@ function parseBitsoUsdMxnRate(payload: unknown): number {
   if (!isRecord(payload) || payload.success !== true || !isRecord(payload.payload)) return 0;
   const last = Number(payload.payload.last);
   return Number.isFinite(last) && last > 0 ? last : 0;
-}
-
-async function fetchJson(url: string, errors: string[]): Promise<unknown> {
-  try {
-    const response = await fetch(url, {
-      cache: "no-store",
-      headers: {
-        "User-Agent": "ArbX-Ray price consensus",
-      },
-      signal: AbortSignal.timeout(8_000),
-    });
-    if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
-    return response.json() as Promise<unknown>;
-  } catch (error) {
-    errors.push(`${url}: ${error instanceof Error ? error.message : "unknown error"}`);
-    return undefined;
-  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

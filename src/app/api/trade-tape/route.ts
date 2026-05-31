@@ -4,6 +4,7 @@ import {
   parseCoinbaseTrades,
   parseKrakenTrades,
 } from "@/lib/market/trade-tape";
+import { fetchPublicJson } from "@/lib/server/public-fetch";
 
 const sources = {
   coinbase: "https://api.exchange.coinbase.com/products/BTC-USD/trades?limit=100",
@@ -14,8 +15,8 @@ export async function GET() {
   const errors: string[] = [];
   const receivedAt = Date.now();
   const [coinbase, kraken] = await Promise.all([
-    fetchJson(sources.coinbase, errors),
-    fetchJson(sources.kraken, errors),
+    fetchPublicJson(sources.coinbase, errors, { userAgent: "ArbX-Ray simulation lab" }),
+    fetchPublicJson(sources.kraken, errors, { userAgent: "ArbX-Ray simulation lab" }),
   ]);
 
   return NextResponse.json(
@@ -34,21 +35,4 @@ export async function GET() {
       },
     },
   );
-}
-
-async function fetchJson(url: string, errors: string[]): Promise<unknown> {
-  try {
-    const response = await fetch(url, {
-      cache: "no-store",
-      headers: {
-        "User-Agent": "ArbX-Ray simulation lab",
-      },
-      signal: AbortSignal.timeout(8_000),
-    });
-    if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
-    return response.json() as Promise<unknown>;
-  } catch (error) {
-    errors.push(`${url}: ${error instanceof Error ? error.message : "unknown error"}`);
-    return undefined;
-  }
 }

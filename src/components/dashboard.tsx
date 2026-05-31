@@ -24,7 +24,7 @@ import {
   RotateCcw,
   Trophy,
 } from "lucide-react";
-import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { exchangeAdapters } from "@/lib/market/adapters";
 import { buildPolylinePoints, chartDomain, polylineAttribute, summarizeChartSeries } from "@/lib/market/charting";
 import { buildCapitalAllocationOptimizer, type AllocationCandidate, type CapitalAllocationOptimizer } from "@/lib/market/capital-allocation";
@@ -51,7 +51,7 @@ import type { HistoricalReplay, HistoricalStrategyRun } from "@/lib/market/histo
 import type { LeadLagOracle, LeadLagPair, LeadLagVenueSignal } from "@/lib/market/lead-lag";
 import { buildExecutionDepthLens } from "@/lib/market/depth-lens";
 import { buildPnlWaterfall } from "@/lib/market/pnl-waterfall";
-import { suggestPanelActions, type DashboardPanelAction } from "@/lib/market/panel-actions";
+import type { DashboardPanelAction } from "@/lib/market/panel-actions";
 import { buildEngineThroughputLab, type EngineThroughputLab } from "@/lib/market/performance-lab";
 import { buildBayesianRegimeBreakLab, type BayesianRegimeBreakLab, type RegimeBreakObservation } from "@/lib/market/regime-break";
 import { buildRebalancePlanner, type RebalancePlanner } from "@/lib/market/rebalance-planner";
@@ -59,10 +59,11 @@ import { buildRiskGovernor, type RiskGovernor } from "@/lib/market/risk-governor
 import type { SettlementRiskOracle, SettlementTier } from "@/lib/market/settlement-risk";
 import { buildSmartOrderRouter, type SmartOrderRouterPlan, type SmartOrderSlice } from "@/lib/market/smart-order-router";
 import { buildChallengeEvidence, type ChallengeCriterionEvidence, type ChallengeCriterionId, type ChallengeEvidence, type DashboardView } from "@/lib/market/challenge-evidence";
+import { useDashboardPublicData, type BackendEvidenceState } from "@/hooks/use-dashboard-public-data";
 import { useEngineWorker } from "@/hooks/use-engine-worker";
 import { useEngineStore } from "@/store/engine-store";
 import type { MarketContext } from "@/lib/market/context";
-import type { BackendHealth, BackendManifest, BackendModule } from "@/lib/market/backend-manifest";
+import type { BackendModule } from "@/lib/market/backend-manifest";
 import type { LiquidityRadar, LiquidityRoute, LiquidityVenueBook } from "@/lib/market/liquidity-radar";
 import type { MexicoCorridorLab, MexicoCorridorLeg, MexicoCorridorRoute } from "@/lib/market/mexico-corridor";
 import type { OptionsIvOracle, SelectedOptionIvQuote } from "@/lib/market/options-iv";
@@ -78,10 +79,13 @@ import type { VenueLatencyRace, VenueLatencyScore } from "@/lib/market/venue-lat
 import type { VenueIntelligence, VenueRoute, VenueTicker } from "@/lib/market/venue-intelligence";
 import type { VenueReliabilityOracle, VenueReliabilityScore } from "@/lib/market/venue-reliability";
 import { buildWalkForwardRobustness, type WalkForwardRobustness } from "@/lib/market/walk-forward";
-import { buildDecisionNetFormula, splitFormulaLines, type FormulaSpec, type FormulaVariable } from "@/lib/market/formula";
+import { buildDecisionNetFormula } from "@/lib/market/formula";
 import { buildDataReadinessRail, type DataReadinessItem } from "@/lib/market/data-readiness";
 import { buildViewActions, type ViewAction } from "@/lib/market/view-actions";
 import type { ExchangeId, FeedHealth, OpportunityDecision, OrderBookSnapshot, TradeEvent } from "@/lib/market/types";
+import { AccessibleChartSvg, ChartFrame } from "@/components/dashboard/chart-frame";
+import { dispatchPanelAction, EmptyState } from "@/components/dashboard/empty-state";
+import { FormulaExplainer } from "@/components/dashboard/formula-explainer";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -113,37 +117,30 @@ const btc = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 6,
 });
 
-type BackendEvidenceState = {
-  status: "loading" | "ready" | "error";
-  manifest?: BackendManifest;
-  health?: BackendHealth;
-  latencyMs?: number;
-  checkedAt?: number;
-  error?: string;
-};
-
 export function Dashboard() {
   const { startLive, stop, replay, clearSession } = useEngineWorker();
   const [enabled, setEnabled] = useState<ExchangeId[]>(defaultEnabledExchanges);
   const [activeView, setActiveView] = useState<DashboardView>("cockpit");
-  const [backendEvidence, setBackendEvidence] = useState<BackendEvidenceState>({ status: "loading" });
-  const [marketContext, setMarketContext] = useState<MarketContext | undefined>();
-  const [cashCarryLab, setCashCarryLab] = useState<CashCarryLab | undefined>();
-  const [settlementRisk, setSettlementRisk] = useState<SettlementRiskOracle | undefined>();
-  const [derivativesPressure, setDerivativesPressure] = useState<DerivativesPressureOracle | undefined>();
-  const [optionsIv, setOptionsIv] = useState<OptionsIvOracle | undefined>();
-  const [historicalReplay, setHistoricalReplay] = useState<HistoricalReplay | undefined>();
-  const [venueIntelligence, setVenueIntelligence] = useState<VenueIntelligence | undefined>();
-  const [liquidityRadar, setLiquidityRadar] = useState<LiquidityRadar | undefined>();
-  const [mexicoCorridor, setMexicoCorridor] = useState<MexicoCorridorLab | undefined>();
-  const [priceConsensus, setPriceConsensus] = useState<PriceConsensusOracle | undefined>();
-  const [usdtBasis, setUsdtBasis] = useState<UsdtBasisOracle | undefined>();
-  const [tradeTape, setTradeTape] = useState<TradeTapeToxicity | undefined>();
-  const [leadLag, setLeadLag] = useState<LeadLagOracle | undefined>();
-  const [venueLatency, setVenueLatency] = useState<VenueLatencyRace | undefined>();
-  const [venueReliability, setVenueReliability] = useState<VenueReliabilityOracle | undefined>();
-  const [triangularLab, setTriangularLab] = useState<TriangularLab | undefined>();
-  const [dataRefreshNonce, setDataRefreshNonce] = useState(0);
+  const {
+    backendEvidence,
+    marketContext,
+    cashCarryLab,
+    settlementRisk,
+    derivativesPressure,
+    optionsIv,
+    historicalReplay,
+    venueIntelligence,
+    liquidityRadar,
+    mexicoCorridor,
+    priceConsensus,
+    usdtBasis,
+    tradeTape,
+    leadLag,
+    venueLatency,
+    venueReliability,
+    triangularLab,
+    refreshPublicData,
+  } = useDashboardPublicData();
   const mode = useEngineStore((state) => state.mode);
   const books = useEngineStore((state) => state.books);
   const best = useEngineStore((state) => state.best);
@@ -653,368 +650,6 @@ export function Dashboard() {
   ]);
   const visiblePublicSourceCount = Math.max(publicSourceCount, backendEvidence.health?.publicSourceCount ?? 0);
 
-  useEffect(() => {
-    let cancelled = false;
-    async function loadBackendEvidence() {
-      const started = performance.now();
-      try {
-        const [healthResponse, manifestResponse] = await Promise.all([
-          fetch("/api/health", { cache: "no-store" }),
-          fetch("/api/backend-manifest", { cache: "no-store" }),
-        ]);
-        if (!healthResponse.ok || !manifestResponse.ok) {
-          throw new Error(`health ${healthResponse.status}, manifest ${manifestResponse.status}`);
-        }
-        const [healthPayload, manifestPayload] = await Promise.all([
-          healthResponse.json() as Promise<BackendHealth>,
-          manifestResponse.json() as Promise<BackendManifest>,
-        ]);
-        if (!cancelled) {
-          setBackendEvidence({
-            status: "ready",
-            health: healthPayload,
-            manifest: manifestPayload,
-            latencyMs: performance.now() - started,
-            checkedAt: Date.now(),
-          });
-        }
-      } catch (error) {
-        if (!cancelled) {
-          setBackendEvidence({
-            status: "error",
-            latencyMs: performance.now() - started,
-            checkedAt: Date.now(),
-            error: error instanceof Error ? error.message : "unknown backend evidence error",
-          });
-        }
-      }
-    }
-    void loadBackendEvidence();
-    const timer = window.setInterval(loadBackendEvidence, 60_000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function loadContext() {
-      try {
-        const response = await fetch("/api/market-context", { cache: "no-store" });
-        if (!response.ok) return;
-        const context = (await response.json()) as MarketContext;
-        if (!cancelled) setMarketContext(context);
-      } catch {
-        if (!cancelled) setMarketContext(undefined);
-      }
-    }
-    void loadContext();
-    const timer = window.setInterval(loadContext, 60_000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [dataRefreshNonce]);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function loadSettlementRisk() {
-      try {
-        const response = await fetch("/api/settlement-risk", { cache: "no-store" });
-        if (!response.ok) return;
-        const oracle = (await response.json()) as SettlementRiskOracle;
-        if (!cancelled) setSettlementRisk(oracle);
-      } catch {
-        if (!cancelled) setSettlementRisk(undefined);
-      }
-    }
-    void loadSettlementRisk();
-    const timer = window.setInterval(loadSettlementRisk, 60_000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [dataRefreshNonce]);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function loadCashCarry() {
-      try {
-        const response = await fetch("/api/cash-carry", { cache: "no-store" });
-        if (!response.ok) return;
-        const lab = (await response.json()) as CashCarryLab;
-        if (!cancelled) setCashCarryLab(lab);
-      } catch {
-        if (!cancelled) setCashCarryLab(undefined);
-      }
-    }
-    void loadCashCarry();
-    const timer = window.setInterval(loadCashCarry, 60_000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [dataRefreshNonce]);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function loadVenueIntelligence() {
-      try {
-        const response = await fetch("/api/venue-intelligence", { cache: "no-store" });
-        if (!response.ok) return;
-        const intelligence = (await response.json()) as VenueIntelligence;
-        if (!cancelled) setVenueIntelligence(intelligence);
-      } catch {
-        if (!cancelled) setVenueIntelligence(undefined);
-      }
-    }
-    void loadVenueIntelligence();
-    const timer = window.setInterval(loadVenueIntelligence, 120_000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [dataRefreshNonce]);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function loadDerivativesPressure() {
-      try {
-        const response = await fetch("/api/derivatives-pressure", { cache: "no-store" });
-        if (!response.ok) return;
-        const pressure = (await response.json()) as DerivativesPressureOracle;
-        if (!cancelled) setDerivativesPressure(pressure);
-      } catch {
-        if (!cancelled) setDerivativesPressure(undefined);
-      }
-    }
-    void loadDerivativesPressure();
-    const timer = window.setInterval(loadDerivativesPressure, 45_000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [dataRefreshNonce]);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function loadOptionsIv() {
-      try {
-        const response = await fetch("/api/options-iv", { cache: "no-store" });
-        if (!response.ok) return;
-        const oracle = (await response.json()) as OptionsIvOracle;
-        if (!cancelled) setOptionsIv(oracle);
-      } catch {
-        if (!cancelled) setOptionsIv(undefined);
-      }
-    }
-    void loadOptionsIv();
-    const timer = window.setInterval(loadOptionsIv, 90_000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [dataRefreshNonce]);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function loadLiquidityRadar() {
-      try {
-        const response = await fetch("/api/liquidity-radar", { cache: "no-store" });
-        if (!response.ok) return;
-        const radar = (await response.json()) as LiquidityRadar;
-        if (!cancelled) setLiquidityRadar(radar);
-      } catch {
-        if (!cancelled) setLiquidityRadar(undefined);
-      }
-    }
-    void loadLiquidityRadar();
-    const timer = window.setInterval(loadLiquidityRadar, 90_000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [dataRefreshNonce]);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function loadPriceConsensus() {
-      try {
-        const response = await fetch("/api/price-consensus", { cache: "no-store" });
-        if (!response.ok) return;
-        const oracle = (await response.json()) as PriceConsensusOracle;
-        if (!cancelled) setPriceConsensus(oracle);
-      } catch {
-        if (!cancelled) setPriceConsensus(undefined);
-      }
-    }
-    void loadPriceConsensus();
-    const timer = window.setInterval(loadPriceConsensus, 45_000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [dataRefreshNonce]);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function loadTradeTape() {
-      try {
-        const response = await fetch("/api/trade-tape", { cache: "no-store" });
-        if (!response.ok) return;
-        const tape = (await response.json()) as TradeTapeToxicity;
-        if (!cancelled) setTradeTape(tape);
-      } catch {
-        if (!cancelled) setTradeTape(undefined);
-      }
-    }
-    void loadTradeTape();
-    const timer = window.setInterval(loadTradeTape, 30_000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [dataRefreshNonce]);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function loadLeadLag() {
-      try {
-        const response = await fetch("/api/lead-lag", { cache: "no-store" });
-        if (!response.ok) return;
-        const oracle = (await response.json()) as LeadLagOracle;
-        if (!cancelled) setLeadLag(oracle);
-      } catch {
-        if (!cancelled) setLeadLag(undefined);
-      }
-    }
-    void loadLeadLag();
-    const timer = window.setInterval(loadLeadLag, 30_000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [dataRefreshNonce]);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function loadUsdtBasis() {
-      try {
-        const response = await fetch("/api/usdt-basis", { cache: "no-store" });
-        if (!response.ok) return;
-        const oracle = (await response.json()) as UsdtBasisOracle;
-        if (!cancelled) setUsdtBasis(oracle);
-      } catch {
-        if (!cancelled) setUsdtBasis(undefined);
-      }
-    }
-    void loadUsdtBasis();
-    const timer = window.setInterval(loadUsdtBasis, 45_000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [dataRefreshNonce]);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function loadMexicoCorridor() {
-      try {
-        const response = await fetch("/api/mexico-corridor", { cache: "no-store" });
-        if (!response.ok) return;
-        const corridor = (await response.json()) as MexicoCorridorLab;
-        if (!cancelled) setMexicoCorridor(corridor);
-      } catch {
-        if (!cancelled) setMexicoCorridor(undefined);
-      }
-    }
-    void loadMexicoCorridor();
-    const timer = window.setInterval(loadMexicoCorridor, 45_000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [dataRefreshNonce]);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function loadVenueLatency() {
-      try {
-        const response = await fetch("/api/venue-latency", { cache: "no-store" });
-        if (!response.ok) return;
-        const race = (await response.json()) as VenueLatencyRace;
-        if (!cancelled) setVenueLatency(race);
-      } catch {
-        if (!cancelled) setVenueLatency(undefined);
-      }
-    }
-    void loadVenueLatency();
-    const timer = window.setInterval(loadVenueLatency, 60_000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [dataRefreshNonce]);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function loadVenueReliability() {
-      try {
-        const response = await fetch("/api/venue-reliability", { cache: "no-store" });
-        if (!response.ok) return;
-        const oracle = (await response.json()) as VenueReliabilityOracle;
-        if (!cancelled) setVenueReliability(oracle);
-      } catch {
-        if (!cancelled) setVenueReliability(undefined);
-      }
-    }
-    void loadVenueReliability();
-    const timer = window.setInterval(loadVenueReliability, 90_000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [dataRefreshNonce]);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function loadHistoricalReplay() {
-      try {
-        const response = await fetch("/api/historical-replay", { cache: "no-store" });
-        if (!response.ok) return;
-        const replayData = (await response.json()) as HistoricalReplay;
-        if (!cancelled) setHistoricalReplay(replayData);
-      } catch {
-        if (!cancelled) setHistoricalReplay(undefined);
-      }
-    }
-    void loadHistoricalReplay();
-    return () => {
-      cancelled = true;
-    };
-  }, [dataRefreshNonce]);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function loadTriangularLab() {
-      try {
-        const response = await fetch("/api/triangular-lab", { cache: "no-store" });
-        if (!response.ok) return;
-        const lab = (await response.json()) as TriangularLab;
-        if (!cancelled) setTriangularLab(lab);
-      } catch {
-        if (!cancelled) setTriangularLab(undefined);
-      }
-    }
-    void loadTriangularLab();
-    const timer = window.setInterval(loadTriangularLab, 45_000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [dataRefreshNonce]);
-
   function toggleExchange(exchangeId: ExchangeId) {
     setEnabled((current) =>
       current.includes(exchangeId)
@@ -1024,12 +659,12 @@ export function Dashboard() {
   }
 
   function runLiveFeeds() {
-    setDataRefreshNonce((value) => value + 1);
+    refreshPublicData();
     startLive(enabled, effectiveConfig, defaultWallets);
   }
 
   function runReplayMode() {
-    setDataRefreshNonce((value) => value + 1);
+    refreshPublicData();
     replay(effectiveConfig, defaultWallets);
   }
 
@@ -7774,135 +7409,6 @@ function DataCell({ label, value }: { label: string; value: string }) {
   );
 }
 
-function FormulaExplainer({ spec, variables = spec.variables ?? [] }: { spec: FormulaSpec; variables?: FormulaVariable[] }) {
-  const lines = splitFormulaLines(spec.equation);
-  return (
-    <div className="mt-4 overflow-hidden rounded border border-zinc-800 bg-zinc-950">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-800 px-3 py-2">
-        <div>
-          <div className="text-xs uppercase text-zinc-500">{spec.modelId}</div>
-          <div className="text-sm font-semibold text-zinc-100">{spec.title}</div>
-        </div>
-        <Badge tone="cyan">formula</Badge>
-      </div>
-      <div className="grid gap-3 p-3 lg:grid-cols-[1.35fr_0.65fr]">
-        <div className="rounded border border-zinc-800 bg-black p-3 font-mono text-[12px] leading-6 text-cyan-100">
-          {lines.map((line, index) => (
-            <div key={`${spec.modelId}-${index}`} className="break-words">
-              {line}
-            </div>
-          ))}
-        </div>
-        <div className="rounded border border-zinc-800 bg-zinc-900 p-3">
-          <div className="text-xs uppercase text-zinc-500">Variables</div>
-          {variables.length > 0 ? (
-            <div className="mt-2 grid gap-2">
-              {variables.map((variable) => (
-                <div key={variable.symbol} className="grid grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] gap-2 text-xs">
-                  <span className="font-mono text-cyan-100">{variable.symbol}</span>
-                  <span className="min-w-0 break-words text-zinc-300">
-                    {variable.value !== undefined ? `${variable.label}: ${variable.value}` : variable.label}
-                  </span>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="mt-2 text-xs leading-5 text-zinc-400">Derived from the live route and public market inputs.</div>
-          )}
-        </div>
-      </div>
-      <div className="border-t border-cyan-500/20 bg-cyan-500/10 px-3 py-2 text-xs leading-5 text-cyan-100">
-        {spec.plainExplanation}
-      </div>
-    </div>
-  );
-}
-
-function ChartFrame({
-  title,
-  source,
-  children,
-  description,
-  metrics,
-}: {
-  title: string;
-  source: string;
-  children: React.ReactNode;
-  description?: string;
-  metrics?: ChartFrameMetric[];
-}) {
-  return (
-    <figure className="rounded border border-zinc-800 bg-zinc-950 p-3" aria-label={`${title}: ${description ?? source}`}>
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <div className="text-sm font-semibold text-zinc-100">{title}</div>
-          {description ? <div className="mt-1 text-xs leading-5 text-zinc-500">{description}</div> : null}
-        </div>
-        <Badge tone="neutral">{source}</Badge>
-      </div>
-      {metrics && metrics.length > 0 ? (
-        <div className="mb-3 grid gap-2 sm:grid-cols-3">
-          {metrics.map((metric) => (
-            <div key={`${metric.label}-${metric.value}`} className="rounded border border-zinc-800 bg-zinc-900/70 p-2">
-              <div className="text-[10px] uppercase text-zinc-500">{metric.label}</div>
-              <div className="mt-1 flex min-w-0 items-center justify-between gap-2">
-                <span className={`truncate text-xs font-semibold tabular-nums ${chartMetricValueClass(metric.tone)}`}>
-                  {metric.value}
-                </span>
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : null}
-      {children}
-    </figure>
-  );
-}
-
-type ChartFrameMetric = {
-  label: string;
-  value: string;
-  tone?: "neutral" | "green" | "red" | "amber" | "cyan";
-};
-
-function chartMetricValueClass(tone: ChartFrameMetric["tone"]): string {
-  if (tone === "green") return "text-emerald-200";
-  if (tone === "red") return "text-red-200";
-  if (tone === "amber") return "text-amber-200";
-  if (tone === "cyan") return "text-cyan-200";
-  return "text-zinc-100";
-}
-
-function AccessibleChartSvg({
-  title,
-  description,
-  children,
-  className = "h-52",
-  viewBox = "0 0 100 100",
-}: {
-  title: string;
-  description: string;
-  children: ReactNode;
-  className?: string;
-  viewBox?: string;
-}) {
-  const chartId = useId();
-  const titleId = `${chartId}-title`;
-  const descriptionId = `${chartId}-description`;
-  return (
-    <svg
-      viewBox={viewBox}
-      role="img"
-      aria-labelledby={`${titleId} ${descriptionId}`}
-      className={`w-full overflow-visible ${className}`}
-    >
-      <title id={titleId}>{title}</title>
-      <desc id={descriptionId}>{description}</desc>
-      {children}
-    </svg>
-  );
-}
-
 function VenueReliabilityOracleView({ oracle, compact = false }: { oracle?: VenueReliabilityOracle; compact?: boolean }) {
   if (!oracle) return <EmptyState text="Loading public venue status pages and operational latency checks." />;
   const policyTone =
@@ -8428,56 +7934,6 @@ function DecisionLine({ decision }: { decision: OpportunityDecision }) {
       </div>
     </div>
   );
-}
-
-function EmptyState({ text, source, prerequisite }: { text: string; source?: string; prerequisite?: string }) {
-  const actions = suggestPanelActions(text);
-  return (
-    <Empty className="min-h-28 rounded border border-dashed border-zinc-800 bg-zinc-950/60 px-4 py-4">
-      <EmptyMedia>
-        <AlertTriangle size={16} className="text-amber-400" />
-      </EmptyMedia>
-      <EmptyTitle>Waiting for evidence</EmptyTitle>
-      <EmptyDescription>{text}</EmptyDescription>
-      {(source || prerequisite || actions.length > 0) && (
-        <EmptyContent className="flex flex-col items-center gap-3">
-          {(source || prerequisite) && (
-            <div className="flex flex-wrap justify-center gap-2 text-[11px] uppercase">
-              {source ? <Badge tone="neutral">{source}</Badge> : null}
-              {prerequisite ? <Badge tone="amber">{prerequisite}</Badge> : null}
-            </div>
-          )}
-          {actions.length > 0 && (
-            <div className="flex flex-wrap justify-center gap-2">
-              {actions.map((action) => (
-                <Button
-                  key={action.id}
-                  className="h-auto min-h-8 whitespace-normal text-left leading-4"
-                  onClick={() => dispatchPanelAction(action.id)}
-                  size="sm"
-                  type="button"
-                  variant={action.id === "backend" ? "ghost" : "outline"}
-                >
-                  {panelActionIcon(action.id)}
-                  {action.label}
-                </Button>
-              ))}
-            </div>
-          )}
-        </EmptyContent>
-      )}
-    </Empty>
-  );
-}
-
-function dispatchPanelAction(action: DashboardPanelAction) {
-  window.dispatchEvent(new CustomEvent<DashboardPanelAction>("arbx:panel-action", { detail: action }));
-}
-
-function panelActionIcon(action: DashboardPanelAction): ReactNode {
-  if (action === "live") return <Play size={14} aria-hidden="true" />;
-  if (action === "replay") return <History size={14} aria-hidden="true" />;
-  return <Database size={14} aria-hidden="true" />;
 }
 
 function adapterChannel(adapter: (typeof exchangeAdapters)[number]): string {

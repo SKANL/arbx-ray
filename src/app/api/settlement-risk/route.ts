@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { buildSettlementRiskOracle, parseMempoolBlocks, parseRecommendedFees } from "@/lib/market/settlement-risk";
+import { fetchPublicJson } from "@/lib/server/public-fetch";
 
 const sources = {
   fees: "https://mempool.space/api/v1/fees/recommended",
@@ -14,7 +15,7 @@ export async function GET() {
   const [feesPayload, blocksPayload, coingeckoPayload] = await Promise.all([
     fetchFirstJson([sources.fees, sources.fallbackFees], errors),
     fetchFirstJson([sources.blocks, sources.fallbackBlocks], errors),
-    fetchJson(sources.coingecko, errors),
+    fetchPublicJson(sources.coingecko, errors, { userAgent: "ArbX-Ray settlement risk oracle" }),
   ]);
   const btcUsd = parseCoinGeckoBtcUsd(coingeckoPayload) || 70_000;
 
@@ -37,27 +38,10 @@ export async function GET() {
 
 async function fetchFirstJson(urls: string[], errors: string[]): Promise<unknown> {
   for (const url of urls) {
-    const payload = await fetchJson(url, errors);
+    const payload = await fetchPublicJson(url, errors, { userAgent: "ArbX-Ray settlement risk oracle" });
     if (payload !== undefined) return payload;
   }
   return undefined;
-}
-
-async function fetchJson(url: string, errors: string[]): Promise<unknown> {
-  try {
-    const response = await fetch(url, {
-      cache: "no-store",
-      headers: {
-        "User-Agent": "ArbX-Ray settlement risk oracle",
-      },
-      signal: AbortSignal.timeout(8_000),
-    });
-    if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
-    return response.json() as Promise<unknown>;
-  } catch (error) {
-    errors.push(`${url}: ${error instanceof Error ? error.message : "unknown error"}`);
-    return undefined;
-  }
 }
 
 function parseCoinGeckoBtcUsd(payload: unknown): number {

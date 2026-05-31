@@ -6,6 +6,7 @@ import {
   parseCoinGeckoTetherPrice,
   parseKrakenUsdtTicker,
 } from "@/lib/market/usdt-basis";
+import { fetchPublicJson } from "@/lib/server/public-fetch";
 
 const sources = {
   coinbase: "https://api.exchange.coinbase.com/products/USDT-USD/ticker",
@@ -19,10 +20,10 @@ export async function GET() {
   const errors: string[] = [];
   const receivedAt = Date.now();
   const [coinbase, kraken, bitstamp, coingecko] = await Promise.all([
-    fetchJson(sources.coinbase, errors),
-    fetchJson(sources.kraken, errors),
-    fetchJson(sources.bitstamp, errors),
-    fetchJson(sources.coingecko, errors),
+    fetchPublicJson(sources.coinbase, errors, { userAgent: "ArbX-Ray USDT basis oracle" }),
+    fetchPublicJson(sources.kraken, errors, { userAgent: "ArbX-Ray USDT basis oracle" }),
+    fetchPublicJson(sources.bitstamp, errors, { userAgent: "ArbX-Ray USDT basis oracle" }),
+    fetchPublicJson(sources.coingecko, errors, { userAgent: "ArbX-Ray USDT basis oracle" }),
   ]);
 
   return NextResponse.json(
@@ -43,21 +44,4 @@ export async function GET() {
       },
     },
   );
-}
-
-async function fetchJson(url: string, errors: string[]): Promise<unknown> {
-  try {
-    const response = await fetch(url, {
-      cache: "no-store",
-      headers: {
-        "User-Agent": "ArbX-Ray USDT basis oracle",
-      },
-      signal: AbortSignal.timeout(8_000),
-    });
-    if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
-    return response.json() as Promise<unknown>;
-  } catch (error) {
-    errors.push(`${url}: ${error instanceof Error ? error.message : "unknown error"}`);
-    return undefined;
-  }
 }
